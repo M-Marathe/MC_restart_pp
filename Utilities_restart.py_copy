@@ -1,0 +1,65 @@
+import numpy as np
+import argparse
+import sys
+from pathlib import Path
+
+
+def chk_size(restart_file):
+    system_size = 0
+    f = open(restart_file, 'r')
+    for line in f:
+        if 'atoms' in line:
+            system_size = int(line.split()[-1])
+            break
+    f.close()
+#    n_atoms = np.cbrt(system_size)
+    return int(system_size)
+
+
+def coord_conv(restart_file, n_bins):
+    # Read magnetic moment components in Cartesian coords
+    m_carte = np.genfromtxt(restart_file, usecols=[4, 5, 6], max_rows=chk_size(restart_file))
+    # Storage of spherical coordinates
+    m_spher = np.zeros(m_carte.shape)
+    # Coordinate conversion
+    # Radius
+    m_spher[:, 0] = np.sqrt(m_carte[:, 0]**2 + m_carte[:, 1]**2 + m_carte[:, 2]**2)
+    # Polar angle Theta
+    m_spher[:, 1] = np.arctan2(np.sqrt(m_carte[:, 0]**2 + m_carte[:, 1]**2), m_carte[:, 2]) * 180 / np.pi
+    # Azimuthal angle Phi
+    m_spher[:, 2] = np.arctan2(m_carte[:, 1], m_carte[:, 0]) * 180 / np.pi
+    # make histogram of equal width (will define my integer value)
+    hist_t, theta = np.histogram(m_spher[:, 1], n_bins)
+    hist_p, phi = np.histogram(m_spher[:, 2], n_bins*2)
+    digit_theta = np.digitize(m_spher[:, 1], theta)
+    digit_phi = np.digitize(m_spher[:, 2], phi)
+    print(m_spher[:, 1].shape, m_spher[:, 2].shape)
+    print(digit_theta.shape, digit_phi.shape)
+    return digit_theta, digit_phi
+
+
+def binary_conv(file_list, n_bins):
+    size = 0
+    for i in range(len(file_list)):
+        file_name = file_list[i]
+        size = size + chk_size(file_name)
+    print(size)
+    magn_compo = np.empty([len(file_list), size, 2])  # for spherical coords
+    for i in range(len(file_list)):
+        file_name = file_list[i]
+        magn_compo[i, :, 0], magn_compo[i, :, 1] = coord_conv(file_name, n_bins)
+        #magn_compo[i] = np.loadtxt(file_name, skiprows=7, usecols= (4,5,6))
+    np.astype(magn_compo, np.float64).tofile("M_compo.bin")
+    return
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='To convert coordinates from restart file')
+    parser.add_argument('--dir_path', type=str, default='.', help='Path to restart files')
+    #parser.add_argument('restart_file', type=str, help='UppASD output restart.*.out  file')
+    parser.add_argument('--n_bins', type=int, default=20, help='Number of bins (for 180 degrees)')
+    args = parser.parse_args()
+    p = Path(args.dir_path)
+    file_list = list(p.glob('T1/restart*.out'))
+    print(file_list)
+    binary_conv(file_list, args.n_bins)
